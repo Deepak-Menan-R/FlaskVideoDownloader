@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        /* Custom animations */
+        @keyframes pulseColor {
+            0%, 100% {
+                background-color: #3b82f6;
+            }
+            50% {
+                background-color: #2563eb;
+            }
+        }
+        .pulse {
+            animation: pulseColor 1.5s infinite;
+        }
+
+        /* Error message styling */
+        #error-messages {
+            display: none;
+            padding: 10px 20px;
+            margin-top: 10px;
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans">
+    <div class="container mx-auto p-6 max-w-lg">
+        <h1 class="text-3xl font-bold text-center text-blue-600 mb-6">🎥 Video Downloader</h1>
+
+        <!-- Form for URL input -->
+        <div class="form-container bg-white p-6 rounded-lg shadow-lg">
+            <form id="download-form" method="POST" action="/download">
+                <label for="video_url" class="block text-lg font-medium text-gray-700">Enter Video URL:</label>
+                <input type="text" id="video_url" name="video_url" placeholder="Paste video URL here..." 
+                       class="w-full mt-2 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                       required>
+                <div class="mt-4 flex space-x-4">
+                    <button type="submit" 
+                            class="bg-blue-500 text-white py-3 px-6 rounded-lg hover:bg-blue-600 transition duration-200 focus:ring-2 focus:ring-offset-2 focus:ring-blue-400">
+                        Start Download
+                    </button>
+                    <button type="button" id="reset-btn" 
+                            class="bg-gray-400 text-white py-3 px-6 rounded-lg hover:bg-gray-500 transition duration-200 focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">
+                        Reset
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Flash messages -->
+        <div id="flash-messages" class="mt-4">
+            <p id="error-messages"></p>
+        </div>
+
+        <!-- Progress section -->
+        <div class="progress bg-white p-6 rounded-lg shadow-lg mt-6 hidden" id="progress-container">
+            <p id="progress-status" class="text-lg font-medium text-gray-700">Preparing download...</p>
+            <div class="mt-4">
+                <p><strong>Progress:</strong> <span id="progress-percent" class="text-blue-500">0%</span></p>
+                <p><strong>Speed:</strong> <span id="progress-speed" class="text-green-500">N/A</span></p>
+                <p><strong>ETA:</strong> <span id="progress-eta" class="text-yellow-500">N/A</span></p>
+            </div>
+            <div class="mt-6 bg-gray-200 rounded-full overflow-hidden">
+                <div id="progress-bar" 
+                     class="bg-blue-500 h-4 rounded-full transition-all duration-500 pulse" style="width: 0%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            const resetForm = () => {
+                // Reset input field
+                $('#video_url').val('');
+            
+                // Hide progress container
+                $('#progress-container').removeClass('block').addClass('hidden');
+            
+                // Reset progress values
+                $('#progress-status').text("Preparing download...");
+                $('#progress-percent').text("0%");
+                $('#progress-speed').text("N/A");
+                $('#progress-eta').text("N/A");
+                $('#progress-bar').css('width', '0%');
+            };
+            
+            // Reset button functionality
+            $('#reset-btn').on('click', function () {
+                resetForm();
+            });
+            
+            // Form submission handling
+            $('#download-form').on('submit', function (e) {
+                e.preventDefault(); // Prevent default form submission
+            
+                const videoUrl = $('#video_url').val();
+                if (!videoUrl) {
+                    alert("Please enter a video URL!");
+                    return;
+                }
+            
+                // Show progress container
+                $('#progress-container').removeClass('hidden').addClass('block');
+                $('#progress-status').text("Starting download...");
+                $('#progress-percent').text("0%");
+                $('#progress-speed').text("N/A");
+                $('#progress-eta').text("N/A");
+                $('#progress-bar').css('width', '0%');
+            
+                // Send the form data via AJAX
+                $.post('/download', { video_url: videoUrl })
+                    .done(function () {
+                        $('#progress-status').text("Download started...");
+                    })
+                    .fail(function (response) {
+                        $('#progress-status').text("An error occurred while starting the download.");
+                        showError(response.responseJSON.message);
+                        resetForm();
+                    });
+            
+                // Start polling for progress updates
+                const interval = setInterval(function () {
+                    $.getJSON('/progress', function (data) {
+                        if (data.status === 'downloading') {
+                            $('#progress-status').text("Downloading...");
+            
+                            // Parse progress data to remove ANSI escape codes
+                            const progress = (data.percent || "").replace(/\x1b\[[0-9;]*m/g, "").trim();
+                            const speed = (data.speed || "").replace(/\x1b\[[0-9;]*m/g, "").trim();
+                            const eta = (data.eta || "").replace(/\x1b\[[0-9;]*m/g, "").trim();
+            
+                            $('#progress-percent').text(progress || "0%");
+                            $('#progress-speed').text(speed || "N/A");
+                            $('#progress-eta').text(eta || "N/A");
+            
+                            // Update progress bar width
+                            const percent = parseFloat(progress.replace('%', '')) || 0;
+                            $('#progress-bar').css('width', percent + '%');
+                        } else if (data.status === 'finished') {
+                            $('#progress-status').text("Download completed successfully!");
+                            $('#progress-bar').css('width', '100%');
+                            clearInterval(interval); // Stop polling immediately after completion
+                        } else if (data.status === 'error') {
+                            $('#progress-status').text("An error occurred during the download.");
+                            showError(data.error_message || "Unknown error occurred.");
+                            resetForm();
+                            clearInterval(interval); // Stop polling immediately if there's an error
+                        }
+                    }).fail(function () {
+                        $('#progress-status').text("Failed to fetch progress.");
+                        showError("Failed to fetch progress.");
+                        resetForm();
+                        clearInterval(interval); // Stop polling if the request fails
+                    });
+                }, 1000);
+            });
+
+            // Function to display error messages
+            function showError(message) {
+                const errorMessage = `Currently the link is not supported. <br> <p> Please try again later. We are working on it.</p> `;
+                $('#error-messages').html(errorMessage).fadeIn(); // Display the error message
+
+                // Set a timeout to fade out the error message after 3 seconds
+                setTimeout(function() {
+                    $('#error-messages').fadeOut(); // Hide the error message
+                }, 5000); // 3000ms = 3 seconds
+            }
+        });
+    </script>
+</body>
+</html>
